@@ -609,6 +609,23 @@ static int dns_global_initialize(struct state_conf *conf)
 
 			char *probe_q_delimiter_p = strchr(arg_pos, ',');
 			char *probe_arg_delimiter_p = strchr(arg_pos, ';');
+            char *repeat_chr_p = strchr(arg_pos, '*');
+
+
+            if (repeat_chr_p != NULL &&
+               (probe_arg_delimiter_p == NULL ||
+                repeat_chr_p < probe_arg_delimiter_p)) {
+
+                int prev_domain_len = strlen(domains[i-1]);
+                domains[i] = xmalloc(prev_domain_len + 1);
+                strncpy(domains[i], domains[i-1], prev_domain_len);
+                domains[i][prev_domain_len] = '\0';
+                if ((i+1) == num_questions) {
+                    arg_pos = repeat_chr_p + 1 + 2;
+                    break;
+                }
+                continue;
+            }
 
 			if (probe_q_delimiter_p == NULL ||
 			    probe_q_delimiter_p == arg_pos ||
