@@ -10,8 +10,9 @@
 #define ZMAP_RECV_INTERNAL_H
 
 #include <stdint.h>
+#include <sys/time.h>
 
-void handle_packet(uint32_t buflen, const uint8_t *bytes);
+void handle_packet(uint32_t buflen, const uint8_t *bytes, struct timeval *tv);
 void recv_init();
 void recv_packets();
 void recv_cleanup();

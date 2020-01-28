@@ -29,13 +29,14 @@ extern probe_module_t module_ntp;
 extern probe_module_t module_upnp;
 extern probe_module_t module_dns;
 extern probe_module_t module_bacnet;
+extern probe_module_t module_traceroute;
 // ADD YOUR MODULE HERE
 
 probe_module_t *probe_modules[] = {
     &module_tcp_synscan, &module_tcp_synackscan, &module_icmp_echo,
     &module_icmp_echo_time, &module_udp, &module_ntp, &module_upnp, &module_dns,
     //&module_tcp_cisco_backdoor,
-    &module_bacnet
+    &module_bacnet, &module_traceroute
     // ADD YOUR MODULE HERE
 };
 
@@ -73,22 +74,22 @@ void fs_add_ip_fields(fieldset_t *fs, struct ip *ip)
 
 #define TIMESTR_LEN 55
 
-void fs_add_system_fields(fieldset_t *fs, int is_repeat, int in_cooldown)
+void fs_add_system_fields(fieldset_t *fs, int is_repeat, int in_cooldown, struct timeval *tv)
 {
 	fs_add_bool(fs, "repeat", is_repeat);
 	fs_add_bool(fs, "cooldown", in_cooldown);
 
 	char *timestr = xmalloc(TIMESTR_LEN + 1);
 	char *timestr_ms = xmalloc(TIMESTR_LEN + 1);
-	struct timeval t;
-	gettimeofday(&t, NULL);
-	struct tm *ptm = localtime(&t.tv_sec);
+	//struct timeval t;
+	//gettimeofday(&t, NULL);
+	struct tm *ptm = localtime(&tv->tv_sec);
 	strftime(timestr, TIMESTR_LEN, "%Y-%m-%dT%H:%M:%S.%%03d%z", ptm);
-	snprintf(timestr_ms, TIMESTR_LEN, timestr, t.tv_usec / 1000);
+	snprintf(timestr_ms, TIMESTR_LEN, timestr, tv->tv_usec / 1000);
 	free(timestr);
 	fs_add_string(fs, "timestamp_str", timestr_ms, 1);
-	fs_add_uint64(fs, "timestamp_ts", (uint64_t)t.tv_sec);
-	fs_add_uint64(fs, "timestamp_us", (uint64_t)t.tv_usec);
+	fs_add_uint64(fs, "timestamp_ts", (uint64_t)tv->tv_sec);
+	fs_add_uint64(fs, "timestamp_us", (uint64_t)tv->tv_usec);
 }
 
 int ip_fields_len = 6;

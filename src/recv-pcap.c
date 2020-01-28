@@ -49,7 +49,7 @@ void packet_cb(u_char __attribute__((__unused__)) * user,
 
 	// length of entire packet captured by libpcap
 	uint32_t buflen = (uint32_t)p->caplen;
-	handle_packet(buflen, bytes);
+	handle_packet(buflen, bytes, &p->ts);
 }
 
 #define BPFLEN 1024

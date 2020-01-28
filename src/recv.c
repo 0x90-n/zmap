@@ -29,7 +29,7 @@ static u_char fake_eth_hdr[65535];
 // bitmap of observed IP addresses
 static uint8_t **seen = NULL;
 
-void handle_packet(uint32_t buflen, const u_char *bytes)
+void handle_packet(uint32_t buflen, const u_char *bytes, struct timeval *tv)
 {
 	if ((sizeof(struct ip) + zconf.data_link_size) > buflen) {
 		// buffer not large enough to contain ethernet
@@ -78,7 +78,7 @@ void handle_packet(uint32_t buflen, const u_char *bytes)
 		bytes = fake_eth_hdr;
 	}
 	zconf.probe_module->process_packet(bytes, buflen, fs, validation);
-	fs_add_system_fields(fs, is_repeat, zsend.complete);
+	fs_add_system_fields(fs, is_repeat, zsend.complete, tv);
 	int success_index = zconf.fsconf.success_index;
 	assert(success_index < fs->len);
 	int is_success = fs_get_uint64_by_index(fs, success_index);
