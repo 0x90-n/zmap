@@ -23,9 +23,16 @@
 
 probe_module_t module_traceroute;
 static uint32_t num_ports;
+static uint8_t min_ttl = 1;
 
 static int traceroute_global_initialize(struct state_conf *state)
 {
+
+    if (state->probe_args) {
+        min_ttl = atoi(state->probe_args);
+    }
+
+
     num_ports = state->source_port_last - state->source_port_first + 1;
     return EXIT_SUCCESS;
 }
@@ -64,7 +71,7 @@ static int traceroute_make_packet(void *buf, UNUSED size_t *buf_len,
 
     ip_header->ip_src.s_addr = src_ip;
     ip_header->ip_dst.s_addr = dst_ip;
-    ip_header->ip_ttl = probe_num + 1;
+    ip_header->ip_ttl = probe_num + min_ttl;
 
     ip_header->ip_id = ((uint16_t)(probe_num&0xff)<<8) | (validation[1] & 0xff);
     tcp_header->th_sport = htons(get_src_port(num_ports, probe_num, validation));
@@ -175,7 +182,7 @@ static void traceroute_process_packet(const u_char *packet,
     uint64_t sent_tv = (uint64_t)sent_tv_sec*1000000 + (uint64_t)sent_tv_usec;
     }*/
 
-    fs_add_uint64(fs, "hop", (ip_inner->ip_id >> 8) + 1);
+    fs_add_uint64(fs, "hop", (ip_inner->ip_id >> 8) + min_ttl);
     fs_add_string(fs, "target", make_ip_str(ip_inner->ip_dst.s_addr), 1);
     fs_add_uint64(fs, "target_raw", (uint64_t)ip_inner->ip_dst.s_addr);
     //fs_add_uint64(fs, "rtt", (now_tv - sent_tv));
