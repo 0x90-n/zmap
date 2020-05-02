@@ -548,7 +548,7 @@ int main(int argc, char *argv[])
 	// default filtering behavior is to drop unsuccessful and duplicates
 	if (!args.output_filter_arg ||
 	    !strcmp(args.output_filter_arg, "default")) {
-		zconf.filter_duplicates = 1;
+		zconf.filter_duplicates = 0;
 		zconf.filter_unsuccessful = 1;
 		log_debug(
 		    "filter",

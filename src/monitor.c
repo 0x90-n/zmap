@@ -162,7 +162,7 @@ static void export_stats(int_status_t *intrnl, export_status_t *exp,
 	uint32_t total_tried_sent = iterator_get_tried_sent(it);
 	uint32_t total_fail = iterator_get_fail(it);
 	uint32_t total_recv = zrecv.pcap_recv;
-	uint32_t recv_success = zrecv.success_unique;
+	uint32_t recv_success = zrecv.success_total;
 	uint32_t app_success = zrecv.app_success_unique;
 	double cur_time = now();
 	double age = cur_time - zsend.start; // time of entire scan
