@@ -105,47 +105,68 @@ static void traceroute_print_packet(FILE *fp, void *packet)
 static int traceroute_validate_packet(const struct ip *ip_hdr, uint32_t len,
 				UNUSED uint32_t *src_ip, uint32_t *validation)
 {
-	if (ip_hdr->ip_p != IPPROTO_ICMP) {
-		return 0;
-	}
-	// check if buffer is large enough to contain expected icmp header
-	if (((uint32_t)4 * ip_hdr->ip_hl + ICMP_SMALLEST_SIZE) > len) {
-		return 0;
-	}
-	struct icmp *icmp_h =
-	    (struct icmp *)((char *)ip_hdr + 4 * ip_hdr->ip_hl);
+    struct ip *ip_inner = (struct ip *)ip_hdr;
+    uint16_t sport = 0;
+    uint16_t dport = 0;
+    uint32_t src = 0, dst = 0;
+    int icmp = 0;
 
-    // Only TTL exceeded ICMPs
-    if (icmp_h->icmp_type != ICMP_TIMXCEED) {
-        return 0;
+    if (ip_hdr->ip_p == IPPROTO_ICMP) {
+
+        icmp = 1;
+	    // check if buffer is large enough to contain expected icmp header
+        if (((uint32_t)4 * ip_hdr->ip_hl + ICMP_SMALLEST_SIZE) > len) {
+	    	return 0;
+	    }
+	    struct icmp *icmp_h =
+	        (struct icmp *)((char *)ip_hdr + 4 * ip_hdr->ip_hl);
+
+        // Only TTL exceeded ICMPs
+        if (icmp_h->icmp_type != ICMP_TIMXCEED) {
+            return 0;
+        }
+
+	    if ((4 * ip_hdr->ip_hl + ICMP_TIMXCEED_UNREACH_HEADER_SIZE +
+	        sizeof(struct ip)) > len) {
+	    	return 0;
+	    }
+
+	    ip_inner = (struct ip *)((char *)icmp_h + 8);
+        if (((uint32_t)4*ip_hdr->ip_hl +
+            ICMP_TIMXCEED_UNREACH_HEADER_SIZE + 4*ip_inner->ip_hl +
+            8) > len) { // +8 is for sport,dport,seq
+            return 0;
+        }
+        src = ip_inner->ip_src.s_addr;
+        dst = ip_inner->ip_dst.s_addr;
+
+        struct tcphdr *tcp_inner = (struct tcphdr *)((char*)ip_inner + 4*ip_inner->ip_hl);
+        sport = tcp_inner->th_sport;
+        dport = tcp_inner->th_dport;
+
+    } else {
+        // Normal IP/TCP
+        if (((uint32_t)4*ip_hdr->ip_hl + 8) > len) {
+            return 0;
+        }
+        struct tcphdr *tcp_inner = (struct tcphdr *)((char*)ip_inner + 4*ip_inner->ip_hl);
+        src = ip_inner->ip_dst.s_addr;
+        dst = ip_inner->ip_src.s_addr;
+        sport = tcp_inner->th_dport;
+        dport = tcp_inner->th_sport;
     }
 
-	if ((4 * ip_hdr->ip_hl + ICMP_TIMXCEED_UNREACH_HEADER_SIZE +
-	    sizeof(struct ip)) > len) {
-		return 0;
-	}
-	struct ip *ip_inner = (struct ip *)((char *)icmp_h + 8);
-    if (((uint32_t)4*ip_hdr->ip_hl +
-        ICMP_TIMXCEED_UNREACH_HEADER_SIZE + 4*ip_inner->ip_hl +
-        8) > len) { // +8 is for sport,dport,seq
-        return 0;
-    }
-    struct tcphdr *tcp_inner = (struct tcphdr *)((char*)ip_inner + 4*ip_inner->ip_hl);
-
-    uint16_t sport = tcp_inner->th_sport;
-    uint16_t dport = tcp_inner->th_dport;
     if (ntohs(dport) != 80) {
         return 0;
     }
 
-    validate_gen(ip_inner->ip_src.s_addr, ip_inner->ip_dst.s_addr,
-            (uint8_t *)validation);
+    validate_gen(src, dst, (uint8_t *)validation);
 
     if (!check_dst_port(ntohs(sport), num_ports, validation)) {
         return 0;
     }
 
-    if ((ip_inner->ip_id & 0xff) != (validation[1] & 0xff)) {
+    if (icmp && (ip_inner->ip_id & 0xff) != (validation[1] & 0xff)) {
         return 0;
     }
 
@@ -159,6 +180,25 @@ static void traceroute_process_packet(const u_char *packet,
 				     uint32_t *validation)
 {
 	struct ip *ip_hdr = (struct ip *)&packet[sizeof(struct ether_header)];
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    if (ip_hdr->ip_p != IPPROTO_ICMP) {
+        // TCP packet
+        struct tcphdr *tcph = (struct tcphdr *)((char*)ip_hdr + 4*ip_hdr->ip_hl);
+
+        uint32_t sent_tv_sec = (tcph->th_seq >> 20) & 0xfff;
+        uint32_t sent_tv_usec = tcph->th_seq & 0xfffff;
+        fs_add_uint64(fs, "hop", 0);
+        fs_add_uint64(fs, "ttl", ip_hdr->ip_ttl);
+        fs_add_string(fs, "target", make_ip_str(ip_hdr->ip_src.s_addr), 1);
+        fs_add_uint64(fs, "target_raw", (uint64_t)ip_hdr->ip_src.s_addr);
+        //fs_add_uint64(fs, "rtt", (now_tv - sent_tv));
+        fs_add_uint64(fs, "sent_sec", (uint64_t)sent_tv_sec);
+        fs_add_uint64(fs, "sent_usec", (uint64_t)sent_tv_usec);
+        fs_add_string(fs, "classification", (char *)"tcp", 0);
+        fs_add_bool(fs, "success", 1);
+        return;
+    }
 	struct icmp *icmp_h =
 	    (struct icmp *)((char *)ip_hdr + 4 * ip_hdr->ip_hl);
 	struct ip *ip_inner = (struct ip *)((char *)icmp_h + 8);
@@ -166,8 +206,6 @@ static void traceroute_process_packet(const u_char *packet,
 
     //validate_gen(ip_inner->ip_src.s_addr, ip_inner->ip_dst.s_addr,
     //        (uint8_t *)validation);
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
     uint32_t sent_tv_sec = (tcp_inner->th_seq >> 20) & 0xfff;
     uint32_t sent_tv_usec = tcp_inner->th_seq & 0xfffff;
 
@@ -183,28 +221,30 @@ static void traceroute_process_packet(const u_char *packet,
     }*/
 
     fs_add_uint64(fs, "hop", (ip_inner->ip_id >> 8) + min_ttl);
+    fs_add_uint64(fs, "ttl", ip_hdr->ip_ttl);
     fs_add_string(fs, "target", make_ip_str(ip_inner->ip_dst.s_addr), 1);
     fs_add_uint64(fs, "target_raw", (uint64_t)ip_inner->ip_dst.s_addr);
     //fs_add_uint64(fs, "rtt", (now_tv - sent_tv));
     fs_add_uint64(fs, "sent_sec", (uint64_t)sent_tv_sec);
     fs_add_uint64(fs, "sent_usec", (uint64_t)sent_tv_usec);
-    fs_add_string(fs, "classification", (char *)"none", 0);
+    fs_add_string(fs, "classification", (char *)"icmp", 0);
     fs_add_bool(fs, "success", 1);
 }
 
 static fielddef_t fields[] = {
     {.name = "hop", .type = "int", .desc = "hop number"},
+    {.name = "ttl", .type = "int", .desc = "TTL of received response"},
     {.name = "target", .type = "string", .desc = "destination being tracerouted"},
     {.name = "target_raw", .type = "int", .desc = "destination being tracerouted"},
     //{.name = "rtt", .type = "int", .desc = "round trip to hop in microseconds"},
     {.name = "sent_sec", .type = "int", .desc = "time packet was sent (seconds & 0xfff)"},
     {.name = "sent_usec", .type = "int", .desc = "time packet was sent (microseconds)"},
-    {.name = "classification", .type= "string", .desc = "classification (unused)"},
+    {.name = "classification", .type= "string", .desc = "classification (tcp or icmp)"},
     {.name = "success", .type = "bool", .desc = "always 1"}};
 
 probe_module_t module_traceroute = {.name = "traceroute",
 				   .packet_length = 54,
-				   .pcap_filter = "icmp and icmp[0]==11",
+				   .pcap_filter = "(icmp and icmp[0]==11) or (tcp && tcp[13] & 4 != 0 || tcp[13] == 18)",
 				   .pcap_snaplen = 96,
 				   .port_args = 0,
                    .global_initialize = &traceroute_global_initialize,
@@ -219,4 +259,4 @@ probe_module_t module_traceroute = {.name = "traceroute",
                         "of hops you want to send.",
 				   .output_type = OUTPUT_TYPE_STATIC,
 				   .fields = fields,
-				   .numfields = 7};
+				   .numfields = 8};
