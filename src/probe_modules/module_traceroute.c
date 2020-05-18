@@ -67,7 +67,13 @@ static int traceroute_make_packet(void *buf, UNUSED size_t *buf_len,
     //uint32_t tcp_seq = ((uint32_t)(probe_num&0xff) << 24) | (0xffffff & validation[0]);
     struct timeval tv;
     gettimeofday(&tv, NULL);
-    uint32_t tcp_seq = ((tv.tv_sec & 0xfff) << 20) | (tv.tv_usec & 0xfffff);
+    //uint32_t tcp_seq = ((tv.tv_sec & 0xfff) << 20) | (tv.tv_usec & 0xfffff);
+    /////ADDITION
+    uint32_t tcp_seq = validation[0]  & 0xffffffff;
+    //validation[0] = (uint8_t)tcp_seq;
+    //printf("unsigned int htonl: %u\n",htonl(tcp_seq));
+    //printf("validation 0 htonl: %u\n",htonl(validation[0]));
+    /////END ADDITION
 
     ip_header->ip_src.s_addr = src_ip;
     ip_header->ip_dst.s_addr = dst_ip;
@@ -154,14 +160,31 @@ static int traceroute_validate_packet(const struct ip *ip_hdr, uint32_t len,
         dst = ip_inner->ip_src.s_addr;
         sport = tcp_inner->th_dport;
         dport = tcp_inner->th_sport;
+	////ADDITION
+	// We treat RST packets different from non RST packets
+	if (tcp_inner->th_flags & TH_RST) {
+		// For RST packets, recv(ack) == sent(seq) + 0 or + 1
+		if (htonl(tcp_inner->th_ack) != htonl(validation[0]) &&
+		    htonl(tcp_inner->th_ack) != htonl(validation[0]) + 1) {
+			return 0;
+		}
+	} else {
+		// For non RST packets, recv(ack) == sent(seq) + 1
+		if (htonl(tcp_inner->th_ack) != htonl(validation[0]) + 1) {
+			//printf("%u\n", htonl(tcp_inner->th_ack));
+			//printf("%u\n", htonl(validation[0]));
+			//printf("************\n");
+			return 0;
+		}
+	}
+	////END ADDITION
+
     }
 
     if (ntohs(dport) != 80) {
         return 0;
     }
-
     validate_gen(src, dst, (uint8_t *)validation);
-
     if (!check_dst_port(ntohs(sport), num_ports, validation)) {
         return 0;
     }
